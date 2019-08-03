@@ -28,6 +28,8 @@ def insert_boxes_into_slices(slices_dir, train_csv):
     print("Total ", total_rows)
     count = 0
 
+    all_slice_images = glob.glob(slices_dir + '/*')
+
     for index, row in data.iterrows():
 
         count += 1
@@ -47,9 +49,11 @@ def insert_boxes_into_slices(slices_dir, train_csv):
         #print(boxes_list[:5])
         #input()
 
-        candidate_images = glob.glob(slices_dir + '/' + image_name + '*')
+        # candidate_images = glob.glob(slices_dir + '/' + image_name + '*')
+        regex = re.compile(slices_dir+'/'+image_name + '+')
+        candidate_images = list(filter(regex.search, all_slice_images))
+        print(candidate_images)
 
-        '''
         for candidate_path in candidate_images:
 
             candidate = re.split('/|-', candidate_path)
@@ -77,7 +81,6 @@ def insert_boxes_into_slices(slices_dir, train_csv):
                                                   'xmax': box_x + box_w - cand_x,
                                                   'ymax': box_y + box_h - cand_y,
                                                   'class': box_label}, ignore_index=True)
-                    boxes_list.remove(box)'''
 
     retina_df.to_csv('retina_train.csv', index=False)
     labels_df = pd.DataFrame(data={'label': list(labels_set), 'id': np.arange(len(labels_set))})
