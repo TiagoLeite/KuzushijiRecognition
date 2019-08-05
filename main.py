@@ -3,6 +3,8 @@ import cv2 as cv
 import glob
 import pandas as pd
 import re
+from sklearn.model_selection import train_test_split
+
 
 IMAGE_NEW_SHAPE = (1024, 1024)
 
@@ -21,12 +23,18 @@ def get_boxes_from_string(boxes_string):
 
 def insert_boxes_into_slices(slices_dir, train_csv):
     data = pd.read_csv(train_csv)
-    retina_df = pd.DataFrame(columns=['filename', 'xmin', 'ymin', 'xmax', 'ymax', 'class'])
+    # retina_df = pd.DataFrame(columns=['filename', 'xmin', 'ymin', 'xmax', 'ymax', 'class'])
     labels_set = set()
-
     total_rows = np.shape(data)[0]
     print("Total ", total_rows)
     count = 0
+
+    filenames = []
+    xmin = []
+    ymin = []
+    xmax = []
+    ymax = []
+    clazzes = []
 
     for index, row in data.iterrows():
 
@@ -41,15 +49,8 @@ def insert_boxes_into_slices(slices_dir, train_csv):
 
         boxes_list = get_boxes_from_string(boxes_string)
 
-        #print(np.shape(boxes_list))
-        #print(boxes_list[:5])
-        #boxes_list.remove(boxes_list[1])
-        #print(boxes_list[:5])
-        #input()
-
         candidate_images = glob.glob(slices_dir + '/' + image_name + '*')
 
-        '''
         for candidate_path in candidate_images:
 
             candidate = re.split('/|-', candidate_path)
@@ -69,51 +70,69 @@ def insert_boxes_into_slices(slices_dir, train_csv):
 
                 if (box_x >= cand_x) and (box_x + box_w <= cand_x + 1024) \
                         and (box_y >= cand_y) and (box_y + box_h <= cand_y + 1024):
+
+                    filenames.append(candidate_path)
+                    xmin.append(box_x - cand_x)
+                    ymin.append(box_y - cand_y)
+                    xmax.append(box_x + box_w - cand_x)
+                    ymax.append(box_y + box_h - cand_y)
+                    clazzes.append(box_label)
+
                     # print(candidate, box)
                     # np.delete(boxes_list, boxes_list.index(box), axis=0)
-                    retina_df = retina_df.append({'filename': candidate_path,
+                    '''retina_df = retina_df.append({'filename': candidate_path,
                                                   'xmin': box_x - cand_x,
                                                   'ymin': box_y - cand_y,
                                                   'xmax': box_x + box_w - cand_x,
                                                   'ymax': box_y + box_h - cand_y,
-                                                  'class': box_label}, ignore_index=True)
-                    boxes_list.remove(box)'''
+                                                  'class': box_label}, ignore_index=True)'''
 
-    retina_df.to_csv('retina_train.csv', index=False)
-    labels_df = pd.DataFrame(data={'label': list(labels_set), 'id': np.arange(len(labels_set))})
+    retina_df = pd.DataFrame(data={'filename': filenames,
+                                   'xmin': xmin,
+                                   'ymin': ymin,
+                                   'xmax': xmax,
+                                   'ymax': ymax,
+                                   'class': clazzes})
+
+    columnsTitles = ['filename', 'xmin', 'ymin', 'xmax', 'ymax', 'class']
+    retina_df = retina_df.reindex(columns=columnsTitles)
+    retina_df['class'] = 'symbol'
+    retina_df.to_csv('retina_train_no_labels.csv', index=False)
+    labels_df = pd.DataFrame(data={'label': ['symbol'], 'id': [0]})
+    labels_df = labels_df.reindex(columns=['label', 'id'])
+    labels_df['label'] = 'symbol'
     labels_df.to_csv('labels.csv', index=False)
 
 
 def slice_image(image_source_folder, image_dest_folder, slice_shape=IMAGE_NEW_SHAPE):
-    for image_name in glob.glob(image_source_folder + '/*.jpg'):
+
+    image_count = 0
+    all_images = glob.glob(image_source_folder + '/*.jpg')
+
+    for image_name in all_images:
+
+        image_count += 1
+        print(image_count, ' of ', len(all_images))
 
         image = cv.imread(image_name)
         image_shape = np.shape(image)
-        print('Image Shape:', image_shape)
         image_width = image_shape[1]
         image_height = image_shape[0]
         rec = image.copy()
 
-        reminder_x = image_width % slice_shape[0]
-        reminder_y = image_height % slice_shape[1]
-
         n_slices_x = image_width // slice_shape[0]
         # n_slices_x *= 2
-        n_slices_x += int(n_slices_x / 3)
+        n_slices_x += int(n_slices_x/2.5)
 
         n_slices_y = image_height // slice_shape[1]
         # n_slices_y *= 2
-        n_slices_y += int(n_slices_y / 3)
-
-        print('Rx', reminder_x, 'Ry', reminder_y)
+        n_slices_y += int(n_slices_y/2.5)
 
         step_x = slice_shape[0] - (slice_shape[0] * (n_slices_x + 1) - image_width) / n_slices_x
         step_y = slice_shape[1] - (slice_shape[1] * (n_slices_y + 1) - image_height) / n_slices_y
 
         # step_x /= 2
         # step_y /= 2
-
-        print('Step x:', int(step_x), 'Step y:', int(step_y))
 
         count = 0
         index_x, index_y = -1, -1  # will help to name the images
@@ -122,7 +141,7 @@ def slice_image(image_source_folder, image_dest_folder, slice_shape=IMAGE_NEW_SH
             index_x += 1
             index_y = -1
             for y in range(0, image_height - slice_shape[1] + 1, int(step_y)):
-                print('Step x:', int(step_x), 'Step y:', int(step_y))
+
                 index_y += 1
                 rec = cv.rectangle(rec, (x, y), (x + slice_shape[0],
                                                  y + slice_shape[1]), (0, 0, 255), 3)
@@ -133,11 +152,28 @@ def slice_image(image_source_folder, image_dest_folder, slice_shape=IMAGE_NEW_SH
                              + str(x) + '_' + str(y) + '.jpg'
 
                 cv.imwrite(saved_name, roi)
-                print('Saved:', saved_name)
 
-        cv.imwrite(image_dest_folder + "/sliced_" + image_name.split('/')[-1], rec)
-        print("image/sliced_" + image_name.split('/')[-1], 'Slices:', count)
+        #cv.imwrite(image_dest_folder + "/sliced_" + image_name.split('/')[-1], rec)
+        #print("image/sliced_" + image_name.split('/')[-1], 'Slices:', count)
 
 
-# slice_image('mock', 'mock', IMAGE_NEW_SHAPE)
+def split_train_test(filename):
+    data = pd.read_csv(filename)
+    unique_names = data['filename'].unique()
+    train, test = train_test_split(unique_names, test_size=0.1, random_state=17)
+    data_test = data[data['filename'].isin(test)]
+    print('Test:', np.shape(data_test))
+    data_train = data[data['filename'].isin(train)]
+    print('Train:', np.shape(data_train))
+    data_test.to_csv('test_dataset.csv', index=False, header=False)
+    data_train.to_csv('train_dataset.csv', index=False, header=False)
+
+
+slice_image('train_images', 'mock', IMAGE_NEW_SHAPE)
 insert_boxes_into_slices('mock', 'train.csv')
+split_train_test('retina_train_no_labels.csv')
+
+
+
+
+

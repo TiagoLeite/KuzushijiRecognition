@@ -32,7 +32,7 @@ def read_image_bgr(path):
     return image[:, :, ::-1].copy()
 
 
-def preprocess_image(x, mode='tf'): # It was mode='caffe' for resnet, 'tf' works with mobilenet
+def preprocess_image(x, mode='caffe'): # It was mode='caffe' for resnet, 'tf' works with mobilenet
     """ Preprocess an image by subtracting the ImageNet mean.
 
     Args
