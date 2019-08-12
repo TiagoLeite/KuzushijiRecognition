@@ -4,6 +4,8 @@ import glob
 import pandas as pd
 import re
 from sklearn.model_selection import train_test_split
+import os
+import uuid
 
 
 IMAGE_NEW_SHAPE = (1024, 1024)
@@ -13,11 +15,6 @@ def get_boxes_from_string(boxes_string):
 
     boxes = boxes_string.split(' ')
     boxes = np.reshape(boxes, newshape=[-1, 5])
-    # ind = np.argsort(boxes[:, 1])
-    # boxes = boxes[ind]
-    # ind = np.argsort(boxes[:, 2])
-    # boxes = boxes[ind]
-    # boxes = [list(box) for box in boxes]
     return boxes
 
 
@@ -78,15 +75,6 @@ def insert_boxes_into_slices(slices_dir, train_csv):
                     ymax.append(box_y + box_h - cand_y)
                     clazzes.append(box_label)
 
-                    # print(candidate, box)
-                    # np.delete(boxes_list, boxes_list.index(box), axis=0)
-                    '''retina_df = retina_df.append({'filename': candidate_path,
-                                                  'xmin': box_x - cand_x,
-                                                  'ymin': box_y - cand_y,
-                                                  'xmax': box_x + box_w - cand_x,
-                                                  'ymax': box_y + box_h - cand_y,
-                                                  'class': box_label}, ignore_index=True)'''
-
     retina_df = pd.DataFrame(data={'filename': filenames,
                                    'xmin': xmin,
                                    'ymin': ymin,
@@ -102,6 +90,43 @@ def insert_boxes_into_slices(slices_dir, train_csv):
     labels_df = labels_df.reindex(columns=['label', 'id'])
     labels_df['label'] = 'symbol'
     labels_df.to_csv('labels.csv', index=False)
+
+
+def save_boxes_to_images(dest_folder_name, original_images_folder):
+
+    train_df = pd.read_csv('train.csv')
+    total = len(train_df)
+
+    for index, row in train_df.iterrows():
+
+        sub_folder_name = row['image_id']
+        boxes_string = row['labels']
+
+        if pd.isna(boxes_string):
+            continue
+
+        boxes_list = get_boxes_from_string(boxes_string)
+
+        print(index, ' of ', total, len(boxes_list), 'boxes')
+
+        image = cv.imread(original_images_folder + '/' + sub_folder_name + '.jpg')
+
+        for box in boxes_list:
+
+            box_label = box[0]
+            box_x = int(box[1])
+            box_y = int(box[2])
+            box_w = int(box[3])
+            box_h = int(box[4])
+
+            if not os.path.isdir(dest_folder_name + '/' + box_label):
+                os.system('mkdir ' + dest_folder_name + '/' + box_label)
+
+            roi = image[box_y:(box_y + box_h), box_x:(box_x + box_w)]
+
+            saved_name = dest_folder_name + '/' + box_label + '/' + uuid.uuid4().hex[:8] + '.jpg'
+
+            cv.imwrite(saved_name, roi)
 
 
 def slice_image(image_source_folder, image_dest_folder, slice_shape=IMAGE_NEW_SHAPE):
@@ -169,10 +194,10 @@ def split_train_test(filename):
     data_train.to_csv('train_dataset.csv', index=False, header=False)
 
 
-slice_image('train_images', 'mock', IMAGE_NEW_SHAPE)
-insert_boxes_into_slices('mock', 'train.csv')
-split_train_test('retina_train_no_labels.csv')
-
+#slice_image('train_images', 'mock', IMAGE_NEW_SHAPE)
+#insert_boxes_into_slices('mock', 'train.csv')
+#split_train_test('retina_train_no_labels.csv')
+save_boxes_to_images('box_images', 'train_images')
 
 
 
