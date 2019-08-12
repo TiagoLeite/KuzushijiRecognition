@@ -283,6 +283,7 @@ def slice_image_2(image_folder, slice_shape=IMAGE_NEW_SHAPE):
 
 images = glob.glob('test_images/*')
 lines = []
+lines_full = []
 size = len(images)
 count = 0
 
@@ -307,13 +308,12 @@ for image in images:
     # cv.imwrite('pico.jpg', images_box[0])
 
     all_boxes_line = ''
+    all_boxes_line_full = ''
 
     for box in boxes:
 
         image_box = img[box[1]:box[3], box[0]:box[2]]
-
         image_box = cv.resize(image_box, (128, 128))
-
         image_box = image_box/255.0
 
         pred = classes_model.predict(np.expand_dims(image_box, axis=0),
@@ -325,12 +325,21 @@ for image in images:
 
         all_boxes_line += (str(label) + ' ' + str(int((box[0] + box[2])/2)) + ' ' + str(int((box[1] + box[3])/2)) + ' ')
 
+        all_boxes_line_full += (str(label) + ' ' + str(box[0]) + ' ' + str(box[1])
+                                 + ' ' + str(box[2]) + ' ' + str(box[3]) + ' ')
+
+
+
     lines.append(all_boxes_line)
+    lines_full.append(all_boxes_line_full)
 
 images = [image.split('/')[-1].replace('.jpg', '') for image in images]
+
 submisison_df = pd.DataFrame(data={'image_id': images, 'labels': lines})
 submisison_df.to_csv('detections/submission.csv', index=False)
 
+submisison_full_df = pd.DataFrame(data={'image_id': images, 'labels': lines_full})
+submisison_full_df.to_csv('detections/submission_full.csv', index=False)
 
 
 

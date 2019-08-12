@@ -13,7 +13,7 @@ import glob
 
 train_path = 'box_images/'
 BATCH_SIZE = 128
-EPOCHS = 10
+EPOCHS = 1
 IMAGE_NEW_SHAPE = (128, 128)
 
 
@@ -111,14 +111,14 @@ CLASSES_NUM = 4212
 train_datagen = ImageDataGenerator(preprocessing_function=None,
                                    rescale=1.0/255.0,
                                    # rotation_range=180,
-                                   # width_shift_range=0.25,
-                                   # height_shift_range=0.25,
+                                   width_shift_range=0.15,
+                                   height_shift_range=0.15,
                                    # shear_range=0.2,
                                    # horizontal_flip=True,
                                    # vertical_flip=True,
                                    # zoom_range=[0.5, 1.5],
-                                   # brightness_range=[0.6, 1.4],
-                                   validation_split=0.2)
+                                   brightness_range=[0.8, 1.2],
+                                   validation_split=0.15)
 
 train_gen = train_datagen.flow_from_directory(train_path,
                                               target_size=(128, 128),
@@ -136,20 +136,19 @@ val_gen = train_datagen.flow_from_directory(train_path,
 #    print('Restoring model from ', SAVED_MODEL_PATH)
 #    model = load_trained_model(SAVED_MODEL_PATH, True)  # change to False if not training from checkpoint
 
+# model = get_new_model()
 
-model = get_new_model()
+model = load_model('saved_class_model.h5',
+                   custom_objects = {'recall_score': recall_score,
+                                    'precision_score': precision_score})
+
 print(model.summary())
-
-
-# for layer in model.layers[:FLAGS.layer_to_train]:
-#    layer.trainable = False
 
 model.compile(optimizer=keras.optimizers.Adam(),
               loss='categorical_crossentropy',
               metrics=['accuracy', recall_score, precision_score])
 
 label_map = train_gen.class_indices
-# print(label_map)
 keys = list(label_map.keys())
 values = [label_map[key] for key in keys]
 print(np.shape(keys), np.shape(values))
@@ -166,7 +165,7 @@ model.fit_generator(train_gen,
                     verbose=1,
                     workers=-1)
 
-model.save('saved_class_model.h5')
+model.save('saved_class_model_2.h5')
 
 # frozen_graph = freeze_session(K.get_session(),
 #                              output_names=[out.op.name for out in model.outputs])
