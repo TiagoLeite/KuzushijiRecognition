@@ -33,8 +33,11 @@ def parse_row(row_string):
     boxes = np.reshape(boxes, newshape=[-1, 5])[:, 1:].astype(np.int)
     return boxes
 
+try:
+    submission_full = pd.read_csv('detections/submission_full.csv')
+except:
+    submission_full = pd.read_csv('submission_full.csv')
 
-submission_full = pd.read_csv('detections/submission_full.csv')
 labels_map = pd.read_csv('labels_map.csv')
 all_boxes_line = ''
 
@@ -47,18 +50,21 @@ size = len(submission_full)
 
 for index, row in submission_full.iterrows():
 
-    if index == 2:
-        break
-
     img = cv.imread('test_images/' + row['image_id'] + '.jpg')
-    boxes = parse_row(row['labels'])
+
+    try:
+        boxes = parse_row(row['labels'])
+    except:
+        images.append(row['image_id'])
+        lines.append(row['labels'])
+        continue
+
     print(index, 'of', size, np.shape(boxes))
 
     for box in boxes:
-
         image_box = img[box[1]:box[3], box[0]:box[2]]
         image_box = cv.resize(image_box, (128, 128))
-        image_box = image_box/255.0
+        image_box = image_box / 255.0
 
         pred = model.predict(np.expand_dims(image_box, axis=0),
                              verbose=0, batch_size=1)[0]
@@ -75,5 +81,3 @@ for index, row in submission_full.iterrows():
 
 re_submission = pd.DataFrame(data={'image_id': images, 'labels': lines})
 re_submission.to_csv('re_submission.csv', index=False)
-
-
