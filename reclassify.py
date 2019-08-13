@@ -39,13 +39,15 @@ except:
     submission_full = pd.read_csv('submission_full.csv')
 
 labels_map = pd.read_csv('labels_map.csv')
-all_boxes_line = ''
 
 model = load_model('saved_class_model_colab.h5', custom_objects={'recall_score': recall_score,
                                                                  'precision_score': precision_score})
 print(model.summary())
 lines = []
+lines_empty = []
 images = []
+images_empty = []
+
 size = len(submission_full)
 
 for index, row in submission_full.iterrows():
@@ -55,29 +57,45 @@ for index, row in submission_full.iterrows():
     try:
         boxes = parse_row(row['labels'])
     except:
-        images.append(row['image_id'])
-        lines.append(row['labels'])
+        images_empty.append(row['image_id'])
+        lines_empty.append(row['labels'])
         continue
 
     print(index, 'of', size, np.shape(boxes))
+
+    images_box_batch = []
+    all_boxes_line = ''
 
     for box in boxes:
         image_box = img[box[1]:box[3], box[0]:box[2]]
         image_box = cv.resize(image_box, (128, 128))
         image_box = image_box / 255.0
+        images_box_batch.append(image_box)
 
-        pred = model.predict(np.expand_dims(image_box, axis=0),
-                             verbose=0, batch_size=1)[0]
+    images_box_batch = np.array(images_box_batch)
 
-        pred_max = np.argmax(pred)
+    pred = model.predict(images_box_batch,
+                         verbose=2, batch_size=128)
 
-        label = labels_map.loc[labels_map['index'] == pred_max, 'name'].iloc[0]
+    pred_max = [np.argmax(pred_i) for pred_i in pred]
+
+    label = [labels_map.loc[labels_map['index'] == pred_max_i, 'name'].iloc[0] for pred_max_i in pred_max]
+
+    k = 0
+
+    for box in boxes:
 
         all_boxes_line += (
-                str(label) + ' ' + str(int((box[0] + box[2]) / 2)) + ' ' + str(int((box[1] + box[3]) / 2)) + ' ')
+                str(label[k]) + ' ' + str(int((box[0] + box[2]) / 2)) + ' ' + str(int((box[1] + box[3]) / 2)) + ' ')
+        k += 1
 
     lines.append(all_boxes_line)
     images.append(row['image_id'])
 
+lines.extend(lines_empty)
+images.extend(images_empty)
+
 re_submission = pd.DataFrame(data={'image_id': images, 'labels': lines})
 re_submission.to_csv('re_submission.csv', index=False)
+
+

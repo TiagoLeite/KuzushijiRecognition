@@ -111,24 +111,23 @@ CLASSES_NUM = 4212
 train_datagen = ImageDataGenerator(preprocessing_function=None,
                                    rescale=1.0/255.0,
                                    # rotation_range=180,
-                                   width_shift_range=0.15,
-                                   height_shift_range=0.15,
+                                   width_shift_range=0.1,
+                                   height_shift_range=0.1,
                                    # shear_range=0.2,
                                    # horizontal_flip=True,
                                    # vertical_flip=True,
                                    # zoom_range=[0.5, 1.5],
-                                   brightness_range=[0.8, 1.2],
-                                   validation_split=0.15)
+                                   brightness_range=[0.75, 1.25])
 
 train_gen = train_datagen.flow_from_directory(train_path,
                                               target_size=(128, 128),
                                               batch_size=BATCH_SIZE,
                                               subset='training')
 
-val_gen = train_datagen.flow_from_directory(train_path,
-                                            target_size=(128, 128),
-                                            batch_size=BATCH_SIZE,
-                                            subset='validation')
+#val_gen = train_datagen.flow_from_directory(train_path,
+#                                            target_size=(128, 128),
+#                                            batch_size=BATCH_SIZE,
+#                                            subset='validation')
 
 #if SAVED_MODEL_PATH == 'null':
 #    model = get_new_model()
@@ -136,15 +135,15 @@ val_gen = train_datagen.flow_from_directory(train_path,
 #    print('Restoring model from ', SAVED_MODEL_PATH)
 #    model = load_trained_model(SAVED_MODEL_PATH, True)  # change to False if not training from checkpoint
 
-# model = get_new_model()
+#model = get_new_model()
 
-model = load_model('saved_class_model.h5',
+model = load_model('saved_class_model_colab.h5',
                    custom_objects = {'recall_score': recall_score,
                                     'precision_score': precision_score})
 
 print(model.summary())
 
-model.compile(optimizer=keras.optimizers.Adam(),
+model.compile(optimizer=keras.optimizers.Adam(lr=0.00004),
               loss='categorical_crossentropy',
               metrics=['accuracy', recall_score, precision_score])
 
@@ -159,13 +158,13 @@ dataframe.to_csv('labels_map.csv', index=False)
 
 model.fit_generator(train_gen,
                     steps_per_epoch=train_gen.samples // BATCH_SIZE,
-                    validation_data=val_gen,
-                    validation_steps=val_gen.samples // BATCH_SIZE,
+                    #validation_data=val_gen,
+                    #validation_steps=val_gen.samples // BATCH_SIZE,
                     epochs=EPOCHS,
                     verbose=1,
                     workers=-1)
 
-model.save('saved_class_model_2.h5')
+model.save('saved_class_model_colab.h5')
 
 # frozen_graph = freeze_session(K.get_session(),
 #                              output_names=[out.op.name for out in model.outputs])
