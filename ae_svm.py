@@ -13,6 +13,8 @@ from keras import backend as K
 import pandas as pd
 from sklearn import svm
 from sklearn.model_selection import cross_val_score
+import numpy as np
+
 
 EPOCHS = 10
 TARGET_SIZE = (128, 128)
@@ -125,19 +127,25 @@ def get_encodings(autoencoder):
                                                   subset='training')
 
     val_gen = train_datagen.flow_from_directory(train_path,
-                                                class_mode='input',
+                                                class_mode='categorical',
                                                 color_mode=color_mode,
                                                 shuffle=False,
                                                 target_size=TARGET_SIZE,
                                                 batch_size=BATCH_SIZE,
                                                 subset='validation')
 
-    encoding_train = encoder_model.predict_generator(train_gen, steps=train_gen.samples//BATCH_SIZE,
+    encoding_train = encoder_model.predict_generator(train_gen, steps=int(np.ceil(train_gen.samples/BATCH_SIZE)),
                                                      workers=-1, verbose=1)
-    encoding_test = encoder_model.predict_generator(val_gen, steps=val_gen.samples//BATCH_SIZE,
+    encoding_test = encoder_model.predict_generator(val_gen, steps=int(np.ceil(val_gen.samples/BATCH_SIZE)),
                                                     workers=-1, verbose=1)
     y_train = train_gen.classes
     y_test = val_gen.classes
+
+    np.savez_compressed('x_train.npz', x_train=encoding_train)
+    np.savez_compressed('x_test.npz', x_test=encoding_test)
+
+    np.savez_compressed('y_train.npz', y_train=y_train)
+    np.savez_compressed('y_test.npz', y_test=y_test)
 
     return encoding_train, encoding_test, y_train, y_test
 
@@ -202,16 +210,31 @@ def knn(emb, all_emb, all_clazz):
     return all_clazz[clazz]
 
 
-autoencoder_model = create_autoencoder(input_shape=(128, 128, 3))
+# autoencoder_model = create_autoencoder(input_shape=(128, 128, 3))
+autoencoder_model = load_model('ckpt_ae/ae_07.h5')
 print(autoencoder_model.summary())
-train_ae(autoencoder_model)
+#train_ae(autoencoder_model)
+
+# test_model_plot_image(autoencoder_model, 'box_images/U+7761/ca59befa.jpg')
 
 #x_train, x_test, y_train, y_test = get_encodings(autoencoder_model)
 
-#clf = svm.LinearSVC(C=2.0)
-#clf.fit(x_train, y_train)
+x_train = np.load("x_train.npz")['x_train']
+x_test = np.load("x_test.npz")['x_test']
+y_train = np.load("y_train.npz")['y_train']
+y_test = np.load("y_test.npz")['y_test']
 
-#score = clf.score(x_test, y_test)
+print(np.shape(x_train))
+print(np.shape(x_test))
+print(np.shape(y_train))
+print(np.shape(y_test))
+
+
+clf = svm.LinearSVC(C=2.0, verbose=1, max_iter=999999999)
+
+clf.fit(x_train, y_train)
+score = clf.score(x_test, y_test)
+print('SVM score:', score)
 
 # encoded_train = np.asarray(encoder_model.predict())
 

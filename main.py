@@ -89,7 +89,7 @@ def insert_boxes_into_slices(slices_dir, train_csv):
     labels_df = pd.DataFrame(data={'label': ['symbol'], 'id': [0]})
     labels_df = labels_df.reindex(columns=['label', 'id'])
     labels_df['label'] = 'symbol'
-    labels_df.to_csv('labels.csv', index=False)
+    labels_df.to_csv('labels.csv', index=False, header=False)
 
 
 def save_boxes_to_images(dest_folder_name, original_images_folder):
@@ -137,7 +137,8 @@ def slice_image(image_source_folder, image_dest_folder, slice_shape=IMAGE_NEW_SH
     for image_name in all_images:
 
         image_count += 1
-        print(image_count, ' of ', len(all_images))
+        if image_count % 10 == 0:
+            print(image_count, ' of ', len(all_images))
 
         image = cv.imread(image_name)
         image_shape = np.shape(image)
@@ -146,18 +147,13 @@ def slice_image(image_source_folder, image_dest_folder, slice_shape=IMAGE_NEW_SH
         rec = image.copy()
 
         n_slices_x = image_width // slice_shape[0]
-        # n_slices_x *= 2
         n_slices_x += int(n_slices_x/2.5)
 
         n_slices_y = image_height // slice_shape[1]
-        # n_slices_y *= 2
         n_slices_y += int(n_slices_y/2.5)
 
         step_x = slice_shape[0] - (slice_shape[0] * (n_slices_x + 1) - image_width) / n_slices_x
         step_y = slice_shape[1] - (slice_shape[1] * (n_slices_y + 1) - image_height) / n_slices_y
-
-        # step_x /= 2
-        # step_y /= 2
 
         count = 0
         index_x, index_y = -1, -1  # will help to name the images
@@ -178,14 +174,13 @@ def slice_image(image_source_folder, image_dest_folder, slice_shape=IMAGE_NEW_SH
 
                 cv.imwrite(saved_name, roi)
 
-        #cv.imwrite(image_dest_folder + "/sliced_" + image_name.split('/')[-1], rec)
-        #print("image/sliced_" + image_name.split('/')[-1], 'Slices:', count)
+        # cv.imwrite(image_dest_folder + "/sliced_" + image_name.split('/')[-1], rec)
 
 
 def split_train_test(filename):
     data = pd.read_csv(filename)
     unique_names = data['filename'].unique()
-    train, test = train_test_split(unique_names, test_size=0.1, random_state=17)
+    train, test = train_test_split(unique_names, test_size=0.01, random_state=5)
     data_test = data[data['filename'].isin(test)]
     print('Test:', np.shape(data_test))
     data_train = data[data['filename'].isin(train)]
@@ -194,10 +189,11 @@ def split_train_test(filename):
     data_train.to_csv('train_dataset.csv', index=False, header=False)
 
 
-#slice_image('train_images', 'mock', IMAGE_NEW_SHAPE)
-#insert_boxes_into_slices('mock', 'train.csv')
-#split_train_test('retina_train_no_labels.csv')
-save_boxes_to_images('box_images', 'train_images')
+slice_image('train_images', 'mock', IMAGE_NEW_SHAPE)
+insert_boxes_into_slices('mock', 'train.csv')
+split_train_test('retina_train_no_labels.csv')
+
+#save_boxes_to_images('box_images', 'train_images')
 
 
 

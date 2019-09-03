@@ -50,28 +50,29 @@ def recall_score(y_true, y_pred):
     return recall
 
 
-keras.backend.tensorflow_backend.set_session(get_session())
-model = models.load_model('saved_model.h5')
-
 # if the model is not converted to an inference model, use the line below
 # see: https://github.com/fizyr/keras-retinanet#converting-a-training-model-to-inference-model
 # model = models.convert_model(model)
 # print(model.summary())
 # load label to names mapping for visualization purposes
+
+
 labels_to_names = {0: 'symbol'}
 IMAGE_NEW_SHAPE = (1024, 1024)
+keras.backend.tensorflow_backend.set_session(get_session())
+model = models.load_model('saved_models/detection_model.h5')
 
 
 def compute_iou(box1, box2):
-    x1 = box1[0]
-    y1 = box1[1]
-    xmax1 = box1[2]
-    ymax1 = box1[3]
+    x1 = int(box1[1])
+    y1 = int(box1[2])
+    xmax1 = int(box1[3])
+    ymax1 = int(box1[4])
 
-    x2 = box2[0]
-    y2 = box2[1]
-    xmax2 = box2[2]
-    ymax2 = box2[3]
+    x2 = int(box2[1])
+    y2 = int(box2[2])
+    xmax2 = int(box2[3])
+    ymax2 = int(box2[4])
 
     assert xmax1 > x1
     assert ymax1 > y1
@@ -91,7 +92,7 @@ def compute_iou(box1, box2):
 
     return 0
 
-
+# old
 def remove_similar_boxes(boxes_csv_file, new_box_csv_file, iou_threshold=0.25):
     boxes = pd.read_csv(boxes_csv_file).values
     print(pd.np.shape(boxes))
@@ -132,99 +133,91 @@ def draw_boxes_on_image(imagefile, boxes_file, filtered_boxes_file):
 
 
 # Returns absolute boxes already
-def run_detection_on_image(image_path, step_x, step_y, min_score=0.5):
+def run_detection_on_image(image_path, min_score=0.5):
     image = read_image_bgr(image_path)
-    # copy to draw on
-    draw = image.copy()
-    draw = cv2.cvtColor(draw, cv2.COLOR_BGR2RGB)
-
     # preprocess image for network
     image = preprocess_image(image)
     image, scale = resize_image(image)
-
     # process image
-    start = time.time()
     boxes, scores, labels = model.predict_on_batch(np.expand_dims(image, axis=0))
-    # print("Processing time: ", time.time() - start)
-
     # correct for image scale
     boxes /= scale
     return_boxes = []
-    captions = list()
+    return_scores = []
+    return_image_name = []
+    # captions = list()
 
     lala = re.sub("[A-Z a-z /.]+", "", image_path).split('_')[-2:]
-    # print(lala)
-    # print(lala[0])
-    # print(lala[1])
 
     # visualize detections
     for box, score, label in zip(boxes[0], scores[0], labels[0]):
         # scores are sorted so we can break
         if score < min_score:
             break
-
         b = box.astype(int)
         b = list(b)
-        # print(np.shape(b))
-        # TODO: improve this hardcoded values
-        # step_x = 467
-        # step_y = 490
-
         absolute_boxes = [
-            b[0] + step_x * int(lala[0]),
-            b[1] + step_y * int(lala[1]),
-            b[2] + step_x * int(lala[0]),
-            b[3] + step_y * int(lala[1]), label]
+            b[0],
+            b[1],
+            b[2],
+            b[3], label]
         return_boxes.append(absolute_boxes)
-        # b[0] += 512 * int(lala[0])
-        # b[2] += 512 * int(lala[0])
-        # b[1] += 512 * int(lala[1])
-        # b[3] += 512 * int(lala[1])
-        draw_box(draw, b, (0, 255, 0))
+        return_scores.append(score)
+        return_image_name.append(image_path.split('/')[-1])
+        # draw_box(draw, b, (0, 255, 0))
         # gt = [row['xmin'], row['ymin'], row['xmax'], row['ymax']]
         # draw_box(draw, gt, color=(255, 0, 0))
-        caption = "{} {:.3f}".format(labels_to_names[label], score)
-        captions.append(caption)
-        draw_caption(draw, b, caption)
+        # caption = "{} {:.3f}".format(labels_to_names[label], score)
+        # captions.append(caption)
+        # draw_caption(draw, b, caption)
 
-    file, ext = os.path.splitext(image_path)
-    image_name = file.split('/')[-1] + ext
-    output_path = os.path.join('results/', image_name)
-    draw_conv = cv2.cvtColor(draw, cv2.COLOR_BGR2RGB)
-    cv2.imwrite(output_path, draw_conv)
+    # file, ext = os.path.splitext(image_path)
+    # image_name = file.split('/')[-1] + ext
+    # output_path = os.path.join('results/', image_name)
+    # draw_conv = cv2.cvtColor(draw, cv2.COLOR_BGR2RGB)
+    # cv2.imwrite(output_path, draw_conv)
 
-    return return_boxes
+    return return_boxes, return_scores, return_image_name
 
 
-def detect_birds_in_folder(foldername, prefix, file_to_save, step_x, step_y, min_score):
-    test_images = glob.glob(foldername + '/' + prefix[:-4] + '*')
-    # print('Path:', foldername + '/' + prefix[:-4] + '*')
-    #print("Found %d images for testing" % len(test_images))
-    #print(test_images)
+def detect_birds_in_folder(foldername, file_to_save, min_score):
+    # test_images = glob.glob(foldername + '/' + prefix[:-4] + '*')
+    test_images = glob.glob(foldername + '/*')
     test_images = sorted(test_images)
+    # test_images = sorted(test_images)
     boxes = list()
-    # capts = list()
+    scores = list()
+    images_ids = list()
+    count = 0
+
     for image_name in test_images:
-        b = run_detection_on_image(image_name, step_x, step_y, min_score=min_score)
-        # print(np.shape(b))
+
+        if count % 10 == 0:
+            print("Now detecting: ", count, ' of', len(test_images))
+
+        count += 1
+        b, score, img_name = run_detection_on_image(image_name, min_score=min_score)
         boxes.extend(b)
-        # boxes.extend(capt)
-        # capts.extend(capt)
-    # print(boxes)
-    dataframe = pd.DataFrame(columns=['xmin', 'ymin', 'xmax', 'ymax', 'class'], data=boxes)
+        scores.extend(score)
+        images_ids.extend(img_name)
+
+    print(len(images_ids), len(boxes), len(scores))
+
+    dataframe = pd.DataFrame(np.column_stack([images_ids, boxes, scores]),
+                             columns=['image_id', 'xmin', 'ymin', 'xmax', 'ymax', 'class', 'score'])
+
+    # dataframe = pd.DataFrame(columns=['image_id', 'xmin', 'ymin', 'xmax', 'ymax', 'class', 'score'],
+    #                         data=[images_ids, boxes, scores])
+
     dataframe.to_csv(file_to_save, index=False)
 
 
-def get_steps(image_folder, slice_shape=IMAGE_NEW_SHAPE):
-    image_name = image_folder
+def get_steps(image_name, slice_shape=IMAGE_NEW_SHAPE):
     image = cv.imread(image_name)
     image_shape = np.shape(image)
     image_width = image_shape[1]
     image_height = image_shape[0]
-    rec = image.copy()
 
-    reminder_x = image_width % slice_shape[0]
-    reminder_y = image_height % slice_shape[1]
     n_slices_x = image_width // slice_shape[0]
     n_slices_y = image_height // slice_shape[1]
 
@@ -234,26 +227,18 @@ def get_steps(image_folder, slice_shape=IMAGE_NEW_SHAPE):
     return int(step_x), int(step_y)
 
 
-def slice_image_2(image_folder, slice_shape=IMAGE_NEW_SHAPE):
-    image_name = image_folder
+def slice_image(image_name, slice_shape=IMAGE_NEW_SHAPE):
+
     image = cv.imread(image_name)
     image_shape = np.shape(image)
-    # print('Image Shape:', image_shape)
     image_width = image_shape[1]
     image_height = image_shape[0]
-    rec = image.copy()
-
-    reminder_x = image_width % slice_shape[0]
-    reminder_y = image_height % slice_shape[1]
+    # rec = image.copy()
     n_slices_x = image_width // slice_shape[0]
     n_slices_y = image_height // slice_shape[1]
 
-    # print('Rx', reminder_x, 'Ry', reminder_y)
-
     step_x = slice_shape[0] - (slice_shape[0] * (n_slices_x + 1) - image_width) / n_slices_x
     step_y = slice_shape[1] - (slice_shape[1] * (n_slices_y + 1) - image_height) / n_slices_y
-
-    # print('Step x:', int(step_x), 'Step y:', int(step_y))
 
     count = 0
     index_x, index_y = -1, -1  # will help to name the images
@@ -263,41 +248,78 @@ def slice_image_2(image_folder, slice_shape=IMAGE_NEW_SHAPE):
         index_y = -1
         for y in range(0, image_height - slice_shape[1] + 1, int(step_y)):
             index_y += 1
-            # print(x, y, x + slice_shape[0], y + slice_shape[1], x // slice_shape[0], y // slice_shape[1])
-            # print(x, y, (x + slice_shape[0], y + slice_shape[1]))
-            rec = cv.rectangle(rec, (x, y), (x + slice_shape[0],
-                                             y + slice_shape[1]), (0, 0, 255), 3)
+            # rec = cv.rectangle(rec, (x, y), (x + slice_shape[0],
+            #                                 y + slice_shape[1]), (0, 0, 255), 3)
             count += 1
             roi = image[y:(y + slice_shape[1]), x:(x + slice_shape[0])]
-
             saved_name = 'test_sliced_images/' + image_name.split('/')[-1].replace(".jpg", '') + '_' \
                          + str(index_x) + '_' + str(index_y) + '.jpg'
-
             cv.imwrite(saved_name, roi)
-            # print('saved ', saved_name)
 
-    cv.imwrite("detections/" + image_name.split('/')[-1], rec)
-
+    # cv.imwrite("detections/" + image_name.split('/')[-1], rec)
     return int(step_x), int(step_y)
 
 
-images = glob.glob('test_images/*')
+def recompose_image():
+
+    images = glob.glob('test_images/*')
+    data = pd.read_csv('detections/all_detections.csv')
+    count = 1
+    size = len(images)
+
+    for image in images:
+        print(count, 'of', size)
+        count += 1
+
+        image_split = image.split('/')[-1]
+
+        data_image = data[data['image_id'].str.startswith(image_split.split('.')[0])]
+
+        if len(data_image) == 0:
+            continue
+
+        rec = cv2.imread(image)
+        step_x, step_y = get_steps(image)
+        image = image.split('/')[-1]
+        print('Found')
+
+        for index, row in data_image.iterrows():
+            image_inc = row['image_id'].split('.')[0].split('_')[-2:]
+            incx = int(image_inc[0])
+            incy = int(image_inc[1])
+            rec = cv.rectangle(rec, (int(row['xmin']) + step_x * incx,
+                                     int(row['ymin']) + step_y * incy),
+                               (int(row['xmax']) + step_x * incx,
+                                int(row['ymax']) + step_y * incy),
+                               (0, 255, 0), 3)
+        try:
+            cv2.imwrite('detections/debug_detections/' + str(len(data_image)) + '_boxes_' + image, rec)
+            print('Saved')
+        except:
+            print('Error')
+
+
 lines = []
 lines_full = []
-size = len(images)
 count = 0
 
-classes_model = keras.models.load_model('saved_class_model.h5',
-                                        custom_objects={'recall_score': recall_score,
-                                                        'precision_score': precision_score})
+images = glob.glob('test_images/*')
+size = len(images)
+
+#detect_birds_in_folder('test_sliced_images',
+#                       'detections/all_detections.csv', min_score=0.1)
+#recompose_image()
+
+#remove_similar_boxes('detections/all_detections.csv', 'detections/filtered_detections.csv', 0.001)
 
 labels_map = pd.read_csv('labels_map.csv')
 
+#cagado
 for image in images:
     print('Now detecting:', image, count, 'of', size)
     img = cv.imread(image)
     count += 1
-    step_x, step_y = slice_image_2(image)
+    step_x, step_y = slice_image(image)
     detect_birds_in_folder('test_sliced_images', image.split('/')[-1],
                            'detections/detections.csv', step_x, step_y, min_score=0.5)
     boxes = remove_similar_boxes('detections/detections.csv', 'detections/filtered_detections.csv', iou_threshold=0.4)
@@ -340,8 +362,4 @@ submisison_df.to_csv('detections/submission.csv', index=False)
 
 submisison_full_df = pd.DataFrame(data={'image_id': images, 'labels': lines_full})
 submisison_full_df.to_csv('detections/submission_full.csv', index=False)
-
-
-
-
 

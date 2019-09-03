@@ -10,74 +10,89 @@ from keras import backend as K
 import pandas as pd
 import numpy as np
 import glob
+from keras.callbacks import *
+from collections import Counter
+from sklearn.utils import class_weight
 
 train_path = 'box_images/'
-BATCH_SIZE = 128
-EPOCHS = 1
-IMAGE_NEW_SHAPE = (128, 128)
+BATCH_SIZE = 32
+EPOCHS = 2
 
 
-def slice_image(image_source_folder, image_dest_folder, slice_shape=IMAGE_NEW_SHAPE):
-
-    image_count = 0
-    all_images = glob.glob(image_source_folder + '/*.jpg')
-
-    for image_name in all_images:
-
-        image_count += 1
-        print(image_count, ' of ', len(all_images))
-
-        image = cv.imread(image_name)
-        image_shape = np.shape(image)
-        image_width = image_shape[1]
-        image_height = image_shape[0]
-        rec = image.copy()
-
-        n_slices_x = image_width // slice_shape[0]
-        # n_slices_x *= 2
-        n_slices_x += int(n_slices_x/2.5)
-
-        n_slices_y = image_height // slice_shape[1]
-        # n_slices_y *= 2
-        n_slices_y += int(n_slices_y/2.5)
-
-        step_x = slice_shape[0] - (slice_shape[0] * (n_slices_x + 1) - image_width) / n_slices_x
-        step_y = slice_shape[1] - (slice_shape[1] * (n_slices_y + 1) - image_height) / n_slices_y
-
-        # step_x /= 2
-        # step_y /= 2
-
-        count = 0
-        index_x, index_y = -1, -1  # will help to name the images
-
-        for x in range(0, image_width - slice_shape[0] + 1, int(step_x)):
-            index_x += 1
-            index_y = -1
-            for y in range(0, image_height - slice_shape[1] + 1, int(step_y)):
-
-                index_y += 1
-                rec = cv.rectangle(rec, (x, y), (x + slice_shape[0],
-                                                 y + slice_shape[1]), (0, 0, 255), 3)
-                count += 1
-                roi = image[y:(y + slice_shape[1]), x:(x + slice_shape[0])]
-
-                saved_name = image_dest_folder + '/' + image_name.split('/')[-1].replace(".jpg", '') + '-' \
-                             + str(x) + '_' + str(y) + '.jpg'
-
-                cv.imwrite(saved_name, roi)
-
-        #cv.imwrite(image_dest_folder + "/sliced_" + image_name.split('/')[-1], rec)
-        #print("image/sliced_" + image_name.split('/')[-1], 'Slices:', count)
+# IMAGE_NEW_SHAPE = (128, 128)
 
 
-def get_new_model():
-    mobile = keras.applications.mobilenet.MobileNet(weights='imagenet',
-                                                    input_tensor=Input(shape=(128, 128, 3)))
-    # print(mobile.summary())
-    x = mobile.layers[-4].output
-    reshaped = Reshape(target_shape=[1024], name='tiago_reshape')(x)
+def focal_loss(gamma=2., alpha=4.):
+    gamma = float(gamma)
+    alpha = float(alpha)
+
+    def focal_loss_fixed(y_true, y_pred):
+        """Focal loss for multi-classification
+        FL(p_t)=-alpha(1-p_t)^{gamma}ln(p_t)
+        Notice: y_pred is probability after softmax
+        gradient is d(Fl)/d(p_t) not d(Fl)/d(x) as described in paper
+        d(Fl)/d(p_t) * [p_t(1-p_t)] = d(Fl)/d(x)
+        Focal Loss for Dense Object Detection
+        https://arxiv.org/abs/1708.02002
+
+        Arguments:
+            y_true {tensor} -- ground truth labels, shape of [batch_size, num_cls]
+            y_pred {tensor} -- model's output, shape of [batch_size, num_cls]
+
+        Keyword Arguments:
+            gamma {float} -- (default: {2.0})
+            alpha {float} -- (default: {4.0})
+
+        Returns:
+            [tensor] -- loss.
+        """
+        epsilon = 1.e-9
+        y_true = tf.convert_to_tensor(y_true, tf.float32)
+        y_pred = tf.convert_to_tensor(y_pred, tf.float32)
+
+        model_out = tf.add(y_pred, epsilon)
+        ce = tf.multiply(y_true, -tf.log(model_out))
+        weight = tf.multiply(y_true, tf.pow(tf.subtract(1., model_out), gamma))
+        fl = tf.multiply(alpha, tf.multiply(weight, ce))
+        reduced_fl = tf.reduce_max(fl, axis=1)
+        return tf.reduce_mean(reduced_fl)
+
+    return focal_loss_fixed
+
+
+def get_densenet_model():
+    densenet = keras.applications.densenet.DenseNet121(weights='imagenet',
+                                                       input_tensor=Input(shape=(128, 128, 3)))
+    x = densenet.layers[-2].output
+    # x = Conv2D(filters=1024, strides=(2, 2), kernel_size=(3, 3), activation='relu', padding='same')(x)
+    # x = Flatten()(x)
+    # x = Reshape(target_shape=[1024], name='reshape')(x)
     # intermediate = Dense(512, activation='relu')(reshaped)
     # drop = Dropout(0.5)(intermediate)
+    pred = Dense(CLASSES_NUM, activation='softmax')(x)
+    model = Model(inputs=densenet.input, outputs=pred)
+    return model
+
+
+def get_resnet_model():
+    densenet = keras.applications.resnet50.ResNet50(weights='imagenet',
+                                                    input_tensor=Input(shape=(128, 128, 3)))
+    x = densenet.output
+    # x = Conv2D(filters=1024, strides=(2, 2), kernel_size=(3, 3), activation='relu', padding='same')(x)
+    # x = Flatten()(x)
+    x = Reshape(target_shape=[1024], name='reshape')(x)
+    # intermediate = Dense(512, activation='relu')(reshaped)
+    # drop = Dropout(0.5)(intermediate)
+    pred = Dense(CLASSES_NUM, activation='softmax')(x)
+    model = Model(inputs=densenet.input, outputs=pred)
+    return model
+
+
+def get_mobilenet_model():
+    mobile = keras.applications.mobilenet.MobileNet(weights='imagenet',
+                                                    input_tensor=Input(shape=(128, 128, 3)))
+    x = mobile.layers[-4].output
+    reshaped = Reshape(target_shape=[1024], name='tiago_reshape')(x)
     pred = Dense(CLASSES_NUM, activation='softmax')(reshaped)
     model = Model(inputs=mobile.input, outputs=pred)
     return model
@@ -109,15 +124,16 @@ FLAGS = None
 CLASSES_NUM = 4212
 
 train_datagen = ImageDataGenerator(preprocessing_function=None,
-                                   rescale=1.0/255.0,
+                                   rescale=1.0 / 255.0,
                                    # rotation_range=180,
-                                   width_shift_range=0.1,
-                                   height_shift_range=0.1,
-                                   # shear_range=0.2,
+                                   # width_shift_range=0.1,
+                                   # height_shift_range=0.1,
+                                   # shear_range=0.1,
                                    # horizontal_flip=True,
                                    # vertical_flip=True,
-                                   # zoom_range=[0.5, 1.5],
-                                   brightness_range=[0.75, 1.25])
+                                   # validation_split=0.15,
+                                   # zoom_range=[0.8, 1.2],
+                                   brightness_range=[0.6, 1.4])
 
 train_gen = train_datagen.flow_from_directory(train_path,
                                               target_size=(128, 128),
@@ -129,21 +145,22 @@ train_gen = train_datagen.flow_from_directory(train_path,
 #                                            batch_size=BATCH_SIZE,
 #                                            subset='validation')
 
-#if SAVED_MODEL_PATH == 'null':
-#    model = get_new_model()
-#else:
-#    print('Restoring model from ', SAVED_MODEL_PATH)
-#    model = load_trained_model(SAVED_MODEL_PATH, True)  # change to False if not training from checkpoint
+model = load_model('saved_models/mobilenet_128.h5',
+                   custom_objects={'recall_score': recall_score,
+                                   'precision_score': precision_score})
+#                                   #'focal_loss_fixed': focal_loss(alpha=.25, gamma=2)})
 
-#model = get_new_model()
-
-model = load_model('saved_class_model_colab.h5',
-                   custom_objects = {'recall_score': recall_score,
-                                    'precision_score': precision_score})
-
+#model = get_mobilenet_model()
 print(model.summary())
 
-model.compile(optimizer=keras.optimizers.Adam(lr=0.00004),
+class_weights = class_weight.compute_class_weight(
+    'balanced',
+    np.unique(train_gen.classes),
+    train_gen.classes)
+
+print(class_weights)
+
+model.compile(optimizer=keras.optimizers.Adam(lr=0.001),
               loss='categorical_crossentropy',
               metrics=['accuracy', recall_score, precision_score])
 
@@ -156,16 +173,23 @@ print(dataframe.head())
 print(dataframe.tail())
 dataframe.to_csv('labels_map.csv', index=False)
 
+# filepath = "ckpt/mobilenet-{epoch:02d}-{val_acc:.4f}.h5"
+filepath = "ckpt/mobilenet2_{epoch:02d}.h5"
+checkpoint = keras.callbacks.ModelCheckpoint(
+    filepath,
+    monitor='train_acc',
+    verbose=1,
+    save_best_only=False,
+    mode='max')
+
 model.fit_generator(train_gen,
                     steps_per_epoch=train_gen.samples // BATCH_SIZE,
                     #validation_data=val_gen,
                     #validation_steps=val_gen.samples // BATCH_SIZE,
                     epochs=EPOCHS,
                     verbose=1,
+                    callbacks=[checkpoint],
+                    class_weight=class_weights,
                     workers=-1)
 
-model.save('saved_class_model_colab.h5')
-
-# frozen_graph = freeze_session(K.get_session(),
-#                              output_names=[out.op.name for out in model.outputs])
-# tf.train.write_graph(frozen_graph, logdir='saved_models', name="saved_model_78.pb", as_text=False)
+model.save('saved_models/mobilenet2_128.h5')

@@ -222,5 +222,10 @@ unseen/*
 
 *.h5
 box_images/*
+saved_models/*
+ckpt/*
+ckpt_ae/*
+detections/*
+detections/debug_detections/*
 
 # End of https://www.gitignore.io/api/python,pycharm+all
