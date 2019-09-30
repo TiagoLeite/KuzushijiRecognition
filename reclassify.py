@@ -5,6 +5,14 @@ from keras import backend as K
 import cv2 as cv
 import glob
 import tensorflow as tf
+from sklearn.neighbors import KNeighborsClassifier
+
+
+def get_embeddings(model, image_test_path):
+    get_3rd_layer_output = K.function([model.layers[0].input],
+                                      [model.layers[7].output])
+    layer_output = get_3rd_layer_output([image_test_path])
+    return layer_output[0]
 
 
 def focal_loss(gamma=2., alpha=4.):
@@ -75,13 +83,12 @@ def parse_row(row_string):
 
 def get_embeddings(model, image_batch):
     get_3rd_layer_output = K.function([model.layers[0].input],
-                                      [model.layers[7].output])
+                                      [model.layers[6].output])
     layer_output = get_3rd_layer_output([image_batch])
     return layer_output[0]
 
 
 def knn(emb, all_emb, all_clazz):
-
     dists = [np.linalg.norm(one_emb - emb) for one_emb in all_emb]
     min_dist = np.argmin(dists)
     return all_clazz[min_dist]
@@ -94,26 +101,26 @@ except:
 
 labels_map = pd.read_csv('labels_map.csv')
 
-#model = load_model('autoencoder_japanese.h5', custom_objects={'recall_score': recall_score,
-#                                                              'precision_score': precision_score})
+ae_model = load_model('ckpt_ae/ae_07.h5')
+print(ae_model.summary())
 
-model = load_model('ckpt/mobilenet-05-0.1547.h5',
-                   custom_objects={'recall_score': recall_score,
-                                   'precision_score': precision_score})
-#                                    'focal_loss_fixed': focal_loss(alpha=.25, gamma=2)})
+labels_map = pd.read_csv('ae_labels_map.csv')
+x_train = np.load("x_train.npz")['x_train']
+y_train = np.load("y_train.npz")['y_train']
+x_test = np.load("x_test.npz")['x_test']
+y_test = np.load("y_test.npz")['y_test']
+x_train_full = np.concatenate((x_train, x_test), axis=0)
+y_train_full = np.concatenate((y_train, y_test), axis=0)
 
+knn = KNeighborsClassifier(n_neighbors=1, n_jobs=-1)
+knn.fit(x_train, y_train)
 
-print(model.summary())
 lines = []
 lines_empty = []
 images = []
 images_empty = []
 
 size = len(submission_full)
-#data = np.load("embeddings.npz")
-
-#print(np.shape(data['emb']))
-#print(np.shape(data['img_name']))
 
 for index, row in submission_full.iterrows():
 
@@ -130,33 +137,23 @@ for index, row in submission_full.iterrows():
 
     all_boxes_line = ''
     label = []
+
     for box in boxes:
         image_box = img[box[1]:box[3], box[0]:box[2]]
-        # image_box = cv.resize(image_box, (128, 128))
+        image_box = cv.resize(image_box, (128, 128))
         image_box = image_box/255.0
         image_box = np.expand_dims(image_box, axis=0)
-        pred = model.predict(image_box)[0]
-        pred_max = np.argmax(pred)
-        label.append(labels_map.loc[labels_map['index'] == pred_max, 'name'].iloc[0])
+        emb = get_embeddings(ae_model, image_box)
+        pred = knn.predict(emb)[0]
+        label.append(labels_map.loc[labels_map['index'] == pred, 'name'].iloc[0])
 
-    # Calculating classes by 1-nn
-    #embs = get_embeddings(model, images_box_batch)
-    #data_emb = list(data['emb'])
-    #data_name = list(data['img_name'])
-    #label = [knn(emb, data_emb, data_name) for emb in embs]
-
-    #if np.shape(boxes)[0] < 8:
-    #    print("Considered empty!")
-    #    images_empty.append(row['image_id'])
-    #    lines_empty.append(' ')
-    #else:
     k = 0
     for box in boxes:
         all_boxes_line += (
-                str(str(label[k]).split('.')[0]) + ' ' + str(int((box[0] + box[2]) / 2)) + ' ' + str(int((box[1] + box[3]) / 2)) + ' ')
+                str(str(label[k]).split('.')[0]) + ' ' + str(int((box[0] + box[2]) / 2)) + ' ' + str(
+            int((box[1] + box[3]) / 2)) + ' ')
         k += 1
 
-    print(all_boxes_line[:32])
     lines.append(all_boxes_line)
     images.append(row['image_id'])
 

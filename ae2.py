@@ -108,7 +108,7 @@ def get_encodings(autoencoder):
     train_path = 'box_images/'
     BATCH_SIZE = 64
     train_datagen = ImageDataGenerator(preprocessing_function=None,
-                                       rescale=1.0 / 255.0,
+                                       rescale=1.0 / 255.0)
                                        # rotation_range=180,
                                        # width_shift_range=0.25,
                                        # height_shift_range=0.25,
@@ -117,7 +117,7 @@ def get_encodings(autoencoder):
                                        # vertical_flip=True,
                                        # zoom_range=[0.5, 1.5],
                                        # brightness_range=[0.75, 1.25],
-                                       validation_split=0.2)
+                                       #validation_split=0.2)
 
     train_gen = train_datagen.flow_from_directory(train_path,
                                                   class_mode='categorical',
@@ -127,20 +127,21 @@ def get_encodings(autoencoder):
                                                   shuffle=False,
                                                   subset='training')
 
-    val_gen = train_datagen.flow_from_directory(train_path,
+    '''val_gen = train_datagen.flow_from_directory(train_path,
                                                 class_mode='categorical',
                                                 color_mode=color_mode,
                                                 shuffle=False,
                                                 target_size=TARGET_SIZE,
                                                 batch_size=BATCH_SIZE,
-                                                subset='validation')
+                                                subset='validation')'''
 
     encoding_train = encoder_model.predict_generator(train_gen, steps=int(np.ceil(train_gen.samples/BATCH_SIZE)),
-                                                     workers=-1, verbose=1)
-    encoding_test = encoder_model.predict_generator(val_gen, steps=int(np.ceil(val_gen.samples/BATCH_SIZE)),
-                                                    workers=-1, verbose=1)
+                                                     workers=-1, verbose=2)
+    #encoding_test = encoder_model.predict_generator(val_gen, steps=int(np.ceil(val_gen.samples/BATCH_SIZE)),
+    #                                                workers=-1, verbose=1)
+
     y_train = train_gen.classes
-    y_test = val_gen.classes
+    #y_test = val_gen.classes
 
     label_map = train_gen.class_indices
     keys = list(label_map.keys())
@@ -152,12 +153,13 @@ def get_encodings(autoencoder):
     dataframe.to_csv('ae_labels_map.csv', index=False)
 
     np.savez_compressed('x_train.npz', x_train=encoding_train)
-    np.savez_compressed('x_test.npz', x_test=encoding_test)
+    # np.savez_compressed('x_test.npz', x_test=encoding_test)
 
     np.savez_compressed('y_train.npz', y_train=y_train)
-    np.savez_compressed('y_test.npz', y_test=y_test)
+    # np.savez_compressed('y_test.npz', y_test=y_test)
 
-    return encoding_train, encoding_test, y_train, y_test
+    # return encoding_train, encoding_test, y_train, y_test
+    return encoding_train, y_train
 
 
 def test_model_plot_image(model, image_test_path):
@@ -222,36 +224,29 @@ def knn(emb, all_emb, all_clazz):
 
 # autoencoder_model = create_autoencoder(input_shape=(128, 128, 3))
 autoencoder_model = load_model('ckpt_ae/ae_07.h5')
-print(autoencoder_model.summary())
+#print(autoencoder_model.summary())
+#train_ae(autoencoder_model)
+
 #test_model_plot_image(autoencoder_model, 'box_images/U+6991/5f06775d.jpg')
 
-#train_ae(autoencoder_model)
-# x_train, x_test, y_train, y_test = get_encodings(autoencoder_model)
+# x_train, y_train = get_encodings(autoencoder_model)
 
+labels_map = pd.read_csv('ae_labels_map.csv')
 x_train = np.load("x_train.npz")['x_train']
-x_test = np.load("x_test.npz")['x_test']
 y_train = np.load("y_train.npz")['y_train']
+x_test = np.load("x_test.npz")['x_test']
 y_test = np.load("y_test.npz")['y_test']
-
-print(np.shape(x_train))
-print(np.shape(x_test))
-print(np.shape(y_train))
-print(np.shape(y_test))
+x_train_full = np.concatenate((x_train, x_test), axis=0)
+y_train_full = np.concatenate((y_train, y_test), axis=0)
 
 k_nn = KNeighborsClassifier(n_neighbors=1, n_jobs=-1)
 k_nn.fit(x_train, y_train)
 
-print(y_train[-100])
+preds = k_nn.predict([x_train[-409], x_train[19066]])
+labels = [labels_map.loc[labels_map['index'] == pred, 'name'].iloc[0] for pred in preds]
 
-print(k_nn.predict([x_train[-100]]))
+print(y_train[-409], y_train[19066])
+print(preds)
+print(labels)
 
 
-# encoded_train = np.asarray(encoder_model.predict())
-
-# =======================================================================
-# test_model(autoencoder_model, 'box_images/U+6991/5f06775d.jpg')
-# get_all_embeddings(autoencoder_model)
-'''data = np.load("embeddings.npz")
-print(data['emb'])
-print(data['img_name'])
-print(np.shape(data['emb']))'''
