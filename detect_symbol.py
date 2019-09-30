@@ -299,34 +299,32 @@ def recompose_image():
             print('Error')
 
 
+images = glob.glob('test_images/*')
 lines = []
 lines_full = []
+size = len(images)
 count = 0
 
-images = glob.glob('test_images/*')
-size = len(images)
-
-#detect_birds_in_folder('test_sliced_images',
-#                       'detections/all_detections.csv', min_score=0.1)
-#recompose_image()
-
-#remove_similar_boxes('detections/all_detections.csv', 'detections/filtered_detections.csv', 0.001)
+classes_model = keras.models.load_model('saved_class_model.h5',
+                                        custom_objects={'recall_score': recall_score,
+                                                        'precision_score': precision_score})
 
 labels_map = pd.read_csv('labels_map.csv')
 
-#cagado
 for image in images:
     print('Now detecting:', image, count, 'of', size)
     img = cv.imread(image)
     count += 1
-    step_x, step_y = slice_image(image)
-    detect_birds_in_folder('test_sliced_images', image.split('/')[-1],
-                           'detections/detections.csv', step_x, step_y, min_score=0.5)
-    boxes = remove_similar_boxes('detections/detections.csv', 'detections/filtered_detections.csv', iou_threshold=0.4)
+    step_x, step_y = get_steps(image)
+
+    detect_birds_in_folder('test_sliced_images', 'detections/all_detections.csv', min_score=0.5)
+
+    # needs to be fixed!
+    boxes = remove_similar_boxes('detections/all_detections.csv', 'detections/filtered_detections.csv',
+                                 iou_threshold=0.5)
 
     #draw_boxes_on_image('detections/' + image.split('/')[-1], 'detections/filtered_detections.csv',
     #                    'detections/filtered_detections.csv')
-
     # cv.imwrite('pico.jpg', images_box[0])
 
     all_boxes_line = ''

@@ -4,6 +4,7 @@ from keras.models import Model
 from keras.losses import *
 from keras.optimizers import *
 from keras.callbacks import *
+from sklearn.neighbors import KNeighborsClassifier
 from matplotlib import pyplot as plt
 from keras.models import load_model
 from random import shuffle
@@ -50,7 +51,7 @@ def create_autoencoder(input_shape):
 
 def train_ae(model):
     train_path = 'box_images/'
-    BATCH_SIZE = 32
+    BATCH_SIZE = 64
     train_datagen = ImageDataGenerator(preprocessing_function=None,
                                        rescale=1.0 / 255.0,
                                        rotation_range=180,
@@ -117,7 +118,7 @@ def get_encodings(autoencoder):
                                        validation_split=0.2)
 
     train_gen = train_datagen.flow_from_directory(train_path,
-                                                  class_mode='categorical',
+                                                  class_mode='input',
                                                   color_mode=color_mode,
                                                   target_size=TARGET_SIZE,
                                                   batch_size=BATCH_SIZE,
@@ -138,6 +139,15 @@ def get_encodings(autoencoder):
                                                     workers=-1, verbose=1)
     y_train = train_gen.classes
     y_test = val_gen.classes
+
+    label_map = train_gen.class_indices
+    keys = list(label_map.keys())
+    values = [label_map[key] for key in keys]
+    print(np.shape(keys), np.shape(values))
+    dataframe = pd.DataFrame(columns=['name', 'index'], data=np.transpose([keys, values]))
+    print(dataframe.head())
+    print(dataframe.tail())
+    dataframe.to_csv('ae_labels_map.csv', index=False)
 
     return encoding_train, encoding_test, y_train, y_test
 
@@ -202,23 +212,35 @@ def knn(emb, all_emb, all_clazz):
     return all_clazz[clazz]
 
 
-autoencoder_model = create_autoencoder(input_shape=(128, 128, 3))
-print(autoencoder_model.summary())
-train_ae(autoencoder_model)
+autoencoder_model = load_model('ckpt_ae/ae_07.h5')
+#autoencoder_model = create_autoencoder(input_shape=(128, 128, 3))
+#print(autoencoder_model.summary())
+#train_ae(autoencoder_model)
+x_train, x_test, y_train, y_test = get_encodings(autoencoder_model)
 
-#x_train, x_test, y_train, y_test = get_encodings(autoencoder_model)
+#test_model_plot_image(autoencoder_model, 'box_images/U+7C69/9c92f7a1.jpg')
+
+#x_train = np.load('x_train.npz')['x_train']
+#y_train = np.load('y_train.npz')['y_train']
+#print(np.shape(x_train))
+#print(y_train)
+
+'''
+k_nn = KNeighborsClassifier(n_neighbors=1, n_jobs=-1)
+k_nn.fit(x_train, y_train)
+
+test = np.random.uniform(-1, 1, size=512)
+
+print(y_train[-1])
+
+print(k_nn.predict([x_train[-2]]))'''
 
 #clf = svm.LinearSVC(C=2.0)
 #clf.fit(x_train, y_train)
-
 #score = clf.score(x_test, y_test)
 
 # encoded_train = np.asarray(encoder_model.predict())
 
 # =======================================================================
-# test_model(autoencoder_model, 'box_images/U+6991/5f06775d.jpg')
 # get_all_embeddings(autoencoder_model)
-'''data = np.load("embeddings.npz")
-print(data['emb'])
-print(data['img_name'])
-print(np.shape(data['emb']))'''
+

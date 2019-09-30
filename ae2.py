@@ -14,6 +14,7 @@ import pandas as pd
 from sklearn import svm
 from sklearn.model_selection import cross_val_score
 import numpy as np
+from sklearn.neighbors import KNeighborsClassifier
 
 
 EPOCHS = 10
@@ -141,6 +142,15 @@ def get_encodings(autoencoder):
     y_train = train_gen.classes
     y_test = val_gen.classes
 
+    label_map = train_gen.class_indices
+    keys = list(label_map.keys())
+    values = [label_map[key] for key in keys]
+    print(np.shape(keys), np.shape(values))
+    dataframe = pd.DataFrame(columns=['name', 'index'], data=np.transpose([keys, values]))
+    print(dataframe.head())
+    print(dataframe.tail())
+    dataframe.to_csv('ae_labels_map.csv', index=False)
+
     np.savez_compressed('x_train.npz', x_train=encoding_train)
     np.savez_compressed('x_test.npz', x_test=encoding_test)
 
@@ -213,11 +223,10 @@ def knn(emb, all_emb, all_clazz):
 # autoencoder_model = create_autoencoder(input_shape=(128, 128, 3))
 autoencoder_model = load_model('ckpt_ae/ae_07.h5')
 print(autoencoder_model.summary())
+#test_model_plot_image(autoencoder_model, 'box_images/U+6991/5f06775d.jpg')
+
 #train_ae(autoencoder_model)
-
-# test_model_plot_image(autoencoder_model, 'box_images/U+7761/ca59befa.jpg')
-
-#x_train, x_test, y_train, y_test = get_encodings(autoencoder_model)
+# x_train, x_test, y_train, y_test = get_encodings(autoencoder_model)
 
 x_train = np.load("x_train.npz")['x_train']
 x_test = np.load("x_test.npz")['x_test']
@@ -229,12 +238,13 @@ print(np.shape(x_test))
 print(np.shape(y_train))
 print(np.shape(y_test))
 
+k_nn = KNeighborsClassifier(n_neighbors=1, n_jobs=-1)
+k_nn.fit(x_train, y_train)
 
-clf = svm.LinearSVC(C=2.0, verbose=1, max_iter=999999999)
+print(y_train[-100])
 
-clf.fit(x_train, y_train)
-score = clf.score(x_test, y_test)
-print('SVM score:', score)
+print(k_nn.predict([x_train[-100]]))
+
 
 # encoded_train = np.asarray(encoder_model.predict())
 
