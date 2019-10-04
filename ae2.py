@@ -31,8 +31,8 @@ def create_autoencoder(input_shape):
     x = Conv2D(filters=32, kernel_size=(3, 3), strides=(2, 2), activation='relu', padding='same')(x)
     # bottleneck layer:
     x = Flatten()(x)
-    encoder = Dense(units=512, name='encoder')(x)
-    x = Dense(units=8 * 8 * 32)(encoder)
+    encoder = Dense(units=256, name='encoder')(x)
+    x = Dense(units=8*8*32)(encoder)
     x = Reshape(target_shape=[8, 8, 32])(x)
     x = Conv2D(filters=32, kernel_size=(3, 3), activation='relu', padding='same')(x)
     x = UpSampling2D(size=(2, 2))(x)
@@ -43,7 +43,7 @@ def create_autoencoder(input_shape):
     x = Conv2D(filters=256, kernel_size=(3, 3), activation='relu', padding='same')(x)
     x = UpSampling2D(size=(2, 2))(x)
     # final(output) layer
-    decoder = Conv2D(3, (3, 3), activation='sigmoid', padding='same', name='decoder')(x)
+    decoder = Conv2D(3, (1, 1), activation='sigmoid', padding='same', name='decoder')(x)
     autoencoder = Model(input=input_img, output=decoder)
 
     # using rmsprop optimizer and binary crossentropy as loss function
@@ -82,7 +82,7 @@ def train_ae(model):
                                                 batch_size=BATCH_SIZE,
                                                 subset='validation')
 
-    filepath = "ckpt_ae/ae_{epoch:02d}.h5"
+    filepath = "ckpt_ae/ae2_{epoch:02d}.h5"
     checkpoint = ModelCheckpoint(
         filepath,
         monitor='val_loss',
@@ -100,7 +100,12 @@ def train_ae(model):
                         callbacks=[checkpoint],
                         workers=-1)
 
-    model.save('saved_models/autoencoder.h5')
+    label_map = train_gen.class_indices
+    keys = list(label_map.keys())
+    values = [label_map[key] for key in keys]
+    print(np.shape(keys), np.shape(values))
+    dataframe = pd.DataFrame(columns=['name', 'index'], data=np.transpose([keys, values]))
+    dataframe.to_csv('ae2_labels_map.csv', index=False)
 
 
 def get_encodings(autoencoder):
@@ -222,10 +227,10 @@ def knn(emb, all_emb, all_clazz):
     return all_clazz[clazz]
 
 
-# autoencoder_model = create_autoencoder(input_shape=(128, 128, 3))
-autoencoder_model = load_model('ckpt_ae/ae_07.h5')
-#print(autoencoder_model.summary())
-#train_ae(autoencoder_model)
+autoencoder_model = create_autoencoder(input_shape=(128, 128, 3))
+#autoencoder_model = load_model('ckpt_ae/ae_07.h5')
+print(autoencoder_model.summary())
+train_ae(autoencoder_model)
 
 #test_model_plot_image(autoencoder_model, 'box_images/U+6991/5f06775d.jpg')
 
