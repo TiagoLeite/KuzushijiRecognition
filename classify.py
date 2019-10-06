@@ -5,7 +5,6 @@ from keras.layers import *
 from keras.models import Model
 import cv2 as cv
 import argparse
-import tensorflow as tf
 from keras import backend as K
 import pandas as pd
 import numpy as np
@@ -15,50 +14,13 @@ from collections import Counter
 from sklearn.utils import class_weight
 
 train_path = 'box_images/'
-BATCH_SIZE = 100
-EPOCHS = 10
+BATCH_SIZE = 256
+EPOCHS = 24
 FLAGS = None
 CLASSES_NUM = 4212
 
+
 # IMAGE_NEW_SHAPE = (128, 128)
-
-
-def focal_loss(gamma=2., alpha=4.):
-    gamma = float(gamma)
-    alpha = float(alpha)
-
-    def focal_loss_fixed(y_true, y_pred):
-        """Focal loss for multi-classification
-        FL(p_t)=-alpha(1-p_t)^{gamma}ln(p_t)
-        Notice: y_pred is probability after softmax
-        gradient is d(Fl)/d(p_t) not d(Fl)/d(x) as described in paper
-        d(Fl)/d(p_t) * [p_t(1-p_t)] = d(Fl)/d(x)
-        Focal Loss for Dense Object Detection
-        https://arxiv.org/abs/1708.02002
-
-        Arguments:
-            y_true {tensor} -- ground truth labels, shape of [batch_size, num_cls]
-            y_pred {tensor} -- model's output, shape of [batch_size, num_cls]
-
-        Keyword Arguments:
-            gamma {float} -- (default: {2.0})
-            alpha {float} -- (default: {4.0})
-
-        Returns:
-            [tensor] -- loss.
-        """
-        epsilon = 1.e-9
-        y_true = tf.convert_to_tensor(y_true, tf.float32)
-        y_pred = tf.convert_to_tensor(y_pred, tf.float32)
-
-        model_out = tf.add(y_pred, epsilon)
-        ce = tf.multiply(y_true, -tf.log(model_out))
-        weight = tf.multiply(y_true, tf.pow(tf.subtract(1., model_out), gamma))
-        fl = tf.multiply(alpha, tf.multiply(weight, ce))
-        reduced_fl = tf.reduce_max(fl, axis=1)
-        return tf.reduce_mean(reduced_fl)
-
-    return focal_loss_fixed
 
 
 def get_densenet_model():
@@ -90,31 +52,34 @@ def get_resnet_model():
 
 
 def get_mobilenet_model():
-    mobile = keras.applications.mobilenet.MobileNet(weights='imagenet',
-                                                    input_tensor=Input(shape=(160, 160, 3)))
-    x = mobile.layers[-4].output
-    reshaped = Reshape(target_shape=[1024], name='tiago_reshape')(x)
-    pred = Dense(CLASSES_NUM, activation='softmax')(reshaped)
+    mobile = keras.applications.mobilenet_v2.MobileNetV2(weights='imagenet',
+                                                         input_tensor=Input(shape=(128, 128, 3)))
+    print(mobile.summary())
+    x = mobile.layers[-2].output # -4 se for mobilenet v1
+    # reshaped = Reshape(target_shape=[1280], name='tiago_reshape')(x)
+    pred = Dense(CLASSES_NUM, activation='softmax')(x)
     model = Model(inputs=mobile.input, outputs=pred)
     return model
 
 
 def get_custom_model():
     input_layer = Input(shape=[128, 128, 3])
-    x = Conv2D(filters=32, kernel_size=(5, 5), strides=(2, 2), padding='same', activation='relu')(input_layer)
+    x = Conv2D(filters=32, kernel_size=(3, 3), strides=(1, 1), padding='same', activation='relu')(input_layer)
+    x = Conv2D(filters=32, kernel_size=(3, 3), strides=(2, 2), padding='same', activation='relu')(x)
     x = BatchNormalization()(x)
-    x = Conv2D(filters=64, kernel_size=(4, 4), strides=(2, 2), padding='same', activation='relu')(x)
+    x = Conv2D(filters=64, kernel_size=(3, 3), strides=(1, 1), padding='same', activation='relu')(x)
+    x = Conv2D(filters=64, kernel_size=(3, 3), strides=(2, 2), padding='same', activation='relu')(x)
     x = BatchNormalization()(x)
-    x = Conv2D(filters=64, kernel_size=(4, 4), strides=(2, 2), padding='same', activation='relu')(x)
-    x = BatchNormalization()(x)
+    x = Conv2D(filters=96, kernel_size=(3, 3), strides=(2, 2), padding='same', activation='relu')(x)
+    x = Conv2D(filters=128, kernel_size=(3, 3), strides=(1, 1), padding='same', activation='relu')(x)
     x = Conv2D(filters=128, kernel_size=(3, 3), strides=(2, 2), padding='same', activation='relu')(x)
     x = Conv2D(filters=128, kernel_size=(3, 3), strides=(2, 2), padding='same', activation='relu')(x)
-    x = Conv2D(filters=128, kernel_size=(3, 3), strides=(2, 2), padding='same', activation='relu')(x)
     x = BatchNormalization()(x)
+    x = Conv2D(filters=256, kernel_size=(3, 3), strides=(2, 2), padding='same', activation='relu')(x)
+    x = Conv2D(filters=512, kernel_size=(3, 3), strides=(2, 2), padding='same', activation='relu')(x)
     x = Flatten()(x)
     output = Dense(units=CLASSES_NUM, activation='softmax')(x)
     return Model(input=input_layer, output=output)
-
 
 
 def precision_score(y_true, y_pred):
@@ -139,36 +104,35 @@ def recall_score(y_true, y_pred):
     return recall
 
 
-#model = load_model('saved_models/mobilenet_128.h5',
+# model = load_model('saved_models/mobilenet_128.h5',
 #                   custom_objects={'recall_score': recall_score,
 #                                   'precision_score': precision_score})
 #                                   #'focal_loss_fixed': focal_loss(alpha=.25, gamma=2)})
 
-model = get_custom_model()
+model = get_mobilenet_model()
 print(model.summary())
 
-#class_weights = class_weight.compute_class_weight(
+# class_weights = class_weight.compute_class_weight(
 #    'balanced',
 #    np.unique(train_gen.classes),
 #    train_gen.classes)
-#print(class_weights)
+# print(class_weights)
 
 model.compile(optimizer=keras.optimizers.Adam(),
               loss='categorical_crossentropy',
               metrics=['accuracy', recall_score, precision_score])
 
-
 train_datagen = ImageDataGenerator(preprocessing_function=None,
-                                   rescale=1.0/255.0,
-                                   #rotation_range=180,
-                                   #width_shift_range=0.1,
-                                   #height_shift_range=0.1,
-                                   #shear_range=0.1,
-                                   #horizontal_flip=True,
-                                   #vertical_flip=True,
-                                   validation_split=0.1,
-                                   #zoom_range=[0.8, 1.2],
-                                   brightness_range=[0.6, 1.4])
+                                   rescale=1.0 / 255.0,
+                                   # rotation_range=180,
+                                   # width_shift_range=0.1,
+                                   # height_shift_range=0.1,
+                                   # shear_range=0.1,
+                                   # horizontal_flip=True,
+                                   # vertical_flip=True,
+                                   validation_split=0.1)
+# zoom_range=[0.8, 1.2],
+# brightness_range=[0.75, 1.25])
 
 train_gen = train_datagen.flow_from_directory(train_path,
                                               target_size=(128, 128),
@@ -190,22 +154,22 @@ print(dataframe.tail())
 dataframe.to_csv('labels_map.csv', index=False)
 
 # filepath = "ckpt/mobilenet-{epoch:02d}-{val_acc:.4f}.h5"
-filepath = "ckpt/custom_{epoch:02d}.h5"
+filepath = "ckpt/mobilenet128_{epoch:02d}.h5"
 checkpoint = keras.callbacks.ModelCheckpoint(
     filepath,
-    monitor='train_acc',
+    monitor='val_acc',
     verbose=1,
     save_best_only=False,
     mode='max')
 
 model.fit_generator(train_gen,
-                    steps_per_epoch=train_gen.samples//BATCH_SIZE + 1,
+                    steps_per_epoch=train_gen.samples // BATCH_SIZE + 1,
                     validation_data=val_gen,
-                    validation_steps=val_gen.samples//BATCH_SIZE + 1,
+                    validation_steps=val_gen.samples // BATCH_SIZE + 1,
                     epochs=EPOCHS,
                     verbose=1,
                     callbacks=[checkpoint],
-                    #class_weight=class_weights,
+                    # class_weight=class_weights,
                     workers=-1)
 
-model.save('saved_models/custom_model.h5')
+model.save('saved_models/mobilenet_final.h5')
