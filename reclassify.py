@@ -99,22 +99,10 @@ try:
 except:
     submission_full = pd.read_csv('submission_full.csv')
 
-#labels_map = pd.read_csv('labels_map.csv')
-
-ae_model = load_model('ckpt_ae/ae_07.h5')
-print(ae_model.summary())
-
-labels_map = pd.read_csv('ae_labels_map.csv')
-x_train = np.load("x_train.npz")['x_train']
-y_train = np.load("y_train.npz")['y_train']
-x_test = np.load("x_test.npz")['x_test']
-y_test = np.load("y_test.npz")['y_test']
-x_train_full = np.concatenate((x_train, x_test), axis=0)
-y_train_full = np.concatenate((y_train, y_test), axis=0)
-
-knn = KNeighborsClassifier(n_neighbors=1, n_jobs=-1)
-knn.fit(x_train_full, y_train_full)
-
+labels_map = pd.read_csv('labels_map.csv')
+model = load_model('ckpt/mobilenet128_03.h5',
+                   custom_objects={'recall_score': recall_score,
+                                   'precision_score': precision_score})
 lines = []
 lines_empty = []
 images = []
@@ -136,27 +124,24 @@ for index, row in submission_full.iterrows():
     print(index, 'of', size, np.shape(boxes))
 
     all_boxes_line = ''
-    label = []
-
-    images_list = []
+    images_box_list = []
 
     for box in boxes:
         image_box = img[box[1]:box[3], box[0]:box[2]]
         image_box = cv.resize(image_box, (128, 128))
-        image_box = image_box/255.0
-        images_list.append(image_box)
-        #image_box = np.expand_dims(image_box, axis=0)
+        image_box = image_box / 255.0
+        # image_box = np.expand_dims(image_box, axis=0)
+        images_box_list.append(image_box)
 
-    embs = get_embeddings(ae_model, images_list)
-    preds = knn.predict(embs)
+    preds = model.predict(np.array(images_box_list))
 
-    label = [labels_map.loc[labels_map['index'] == k, 'name'].iloc[0] for k in preds]
-
+    preds_max = [np.argmax(pred) for pred in preds]
+    labels = [labels_map.loc[labels_map['index'] == pred_max, 'name'].iloc[0] for pred_max in preds_max]
     k = 0
     for box in boxes:
         all_boxes_line += (
-                str(str(label[k]).split('.')[0]) + ' ' + str(int((box[0] + box[2]) / 2)) + ' ' + str(
-            int((box[1] + box[3]) / 2)) + ' ')
+                str(str(labels[k]).split('.')[0]) + ' ' + str(int((box[0] + box[2]) / 2)) + ' ' +
+                str(int((box[1] + box[3]) / 2)) + ' ')
         k += 1
 
     lines.append(all_boxes_line)
@@ -164,6 +149,5 @@ for index, row in submission_full.iterrows():
 
 lines.extend(lines_empty)
 images.extend(images_empty)
-
 re_submission = pd.DataFrame(data={'image_id': images, 'labels': lines})
-re_submission.to_csv('re_submission.csv', index=False)
+re_submission.to_csv('reclass_submission.csv', index=False)
